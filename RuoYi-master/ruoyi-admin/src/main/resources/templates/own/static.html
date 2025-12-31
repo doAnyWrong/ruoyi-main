@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <th:block th:include="include :: header('静态地图查询')" />
+    <style>
+        .form-row { margin-bottom: 10px; }
+        .preview-box { margin-top: 15px; }
+    </style>
+    <meta charset="utf-8">
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>静态地图</title>
+    <link rel="shortcut icon" th:href="@{favicon.ico}"/>
+    <link th:href="@{/css/style.min.css}" rel="stylesheet"/>
+</head>
+<body class="gray-bg">
+    <div class="container-div">
+        <div class="row">
+            <div class="col-sm-12">
+                <div class="box box-main">
+                    <div class="box-header">
+                        <div class="box-title">
+                            <i class="fa fa-map"></i> 静态地图查询
+                        </div>
+                    </div>
+                    <div class="box-body">
+                        <form id="map-form" class="form-horizontal">
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label">location（中心点坐标）</label>
+                                <div class="col-sm-6">
+                                    <input name="location" class="form-control" placeholder="示例：116.397428,39.90923（小数不超过6位）">
+                                </div>
+                                <div class="col-sm-4">
+                                    <span class="help-block m-b-none">经纬度用“,”分隔</span>
+                                    <button type="button" id="btnLocate" class="btn btn-info" style="margin-top:6px;">
+                                        获取当前位置
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label is-required">zoom（地图级别）</label>
+                                <div class="col-sm-3">
+                                    <input name="zoom" class="form-control" type="number" min="1" max="17" required placeholder="1-17">
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label">size（地图大小）</label>
+                                <div class="col-sm-3">
+                                    <input name="size" class="form-control" placeholder="宽*高，最大 1024*1024" value="400*400">
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label">scale（普通/高清）</label>
+                                <div class="col-sm-3">
+                                    <select name="scale" class="form-control">
+                                        <option value="1" selected>1（普通图）</option>
+                                        <option value="2">2（高清图：尺寸与zoom加倍）</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label">markers（标注）</label>
+                                <div class="col-sm-6">
+                                    <input name="markers" class="form-control" placeholder="标注，最多10个">
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label">labels（标签）</label>
+                                <div class="col-sm-6">
+                                    <input name="labels" class="form-control" placeholder="标签，最多10个">
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label">paths（折线/多边形）</label>
+                                <div class="col-sm-6">
+                                    <input name="paths" class="form-control" placeholder="折线/多边形，最多4个">
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <label class="col-sm-2 control-label">traffic（路况）</label>
+                                <div class="col-sm-3">
+                                    <select name="traffic" class="form-control">
+                                        <option value="0" selected>0（不展现）</option>
+                                        <option value="1">1（展现）</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row form-group">
+                                <div class="col-sm-2"></div>
+                                <div class="col-sm-6">
+                                    <button type="button" id="btnQuery" class="btn btn-primary">查询</button>
+                                    <button type="reset" class="btn btn-default">重置</button>
+                                </div>
+                            </div>
+                        </form>
+                        <div class="preview-box">
+                            <img id="mapPreview"  alt="静态地图预览" style="max-width:100%;border:1px solid #eee;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <th:block th:include="include :: footer" />
+    <script th:inline="javascript">
+        var prefix = ctx + "own/map";
+
+        function validateLocation(val) {
+            if (!val) return true;
+            var re = /^-?\d+(\.\d{1,6})?,-?\d+(\.\d{1,6})?$/;
+            return re.test(val.trim());
+        }
+
+        // 获取浏览器定位并填充到 location 输入框
+        // 说明：
+        // 1）现代浏览器的 Geolocation API 需要 HTTPS 环境或 localhost
+        // 2）用户需要点击“允许”授权访问位置信息
+        // 3）定位可能耗时或失败，需处理各种错误码
+        $("#btnLocate").on("click", function () {
+            var $btn = $(this);
+            // 禁用按钮并提示处理中
+            $btn.prop("disabled", true).text("定位中...");
+            // 判断浏览器是否支持定位
+            if (!navigator.geolocation) {
+                $.modal.msgError("当前浏览器不支持地理定位");
+                $btn.prop("disabled", false).text("获取当前位置");
+                return;
+            }
+            // 调用 HTML5 Geolocation
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    // 成功回调：获取经纬度并限制小数点后最多 6 位
+                    var lat = Number(pos.coords.latitude.toFixed(6));
+                    var lng = Number(pos.coords.longitude.toFixed(6));
+                    // 将坐标写入输入框，格式：lng,lat
+                    $("input[name='location']").val(lng + "," + lat);
+                    $.modal.msgSuccess("定位成功");
+                    $btn.prop("disabled", false).text("获取当前位置");
+                },
+                function (err) {
+                    // 失败回调：按错误类型给出提示
+                    var msg = "定位失败";
+                    if (err.code === err.PERMISSION_DENIED) {
+                        msg = "定位权限被拒绝（请在浏览器中允许位置信息访问）";
+                    } else if (err.code === err.POSITION_UNAVAILABLE) {
+                        msg = "位置信息不可用（可能网络或设备原因）";
+                    } else if (err.code === err.TIMEOUT) {
+                        msg = "定位超时（请重试或检查网络）";
+                    }
+                    $.modal.msgError(msg);
+                    $btn.prop("disabled", false).text("获取当前位置");
+                },
+                {
+                    enableHighAccuracy: true, // 尝试高精度定位
+                    timeout: 8000,            // 超时时间（毫秒）
+                    maximumAge: 0             // 不使用缓存位置
+                }
+            );
+        });
+
+        $("#btnQuery").on("click", function () {
+            var formData = $("#map-form").serializeArray();
+            var data = {};
+            $.each(formData, function () { data[this.name] = this.value; });
+
+            if (!validateLocation(data.location)) {
+                $.modal.msgError("location 坐标格式错误，示例：116.397428,39.90923（小数不超过6位）");
+                return;
+            }
+            if (!data.zoom) {
+                $.modal.msgError("zoom 为必填，范围[1,17]");
+                return;
+            }
+
+            $.ajax({
+                url: prefix + "/static/search",
+                type: "post",
+                data: data,
+                success: function (res) {
+                  console.log( res)
+                    if (res.code === 0) {
+                        $("#mapPreview").attr("src", res.msg);
+                    } else {
+                        $.modal.msgError(res.msg || "查询失败");
+                    }
+                },
+                error: function () {
+                    $.modal.msgError("请求失败");
+                }
+            });
+        });
+    </script>
+</body>
+</html>
